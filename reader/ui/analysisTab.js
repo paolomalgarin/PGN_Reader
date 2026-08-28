@@ -170,7 +170,19 @@ function updateEvalBar(evalData) {
     }
 }
 
+let lastRenderedNode = null;
+
 function renderComment() {
     els.comment.innerHTML = renderCommentHTML(state.tree.current.comment)
         || '<div class="cb-comment-empty">No comment on this move.</div>';
+
+    // Solo quando la mossa corrente è CAMBIATA davvero (non per qualsiasi
+    // altro notifyChange, es. un NAG cliccato o un commento modificato sulla
+    // stessa mossa): il nuovo appunto deve sempre iniziare visibile dall'alto,
+    // mai restare scrollato a metà per via del commento precedente più lungo.
+    if (state.tree.current !== lastRenderedNode) {
+        lastRenderedNode = state.tree.current;
+        const panel = document.getElementById('analysis');
+        if (panel) panel.scrollTop = 0;
+    }
 }

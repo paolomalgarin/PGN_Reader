@@ -32,9 +32,32 @@ function render() {
 
     renderChildren(container, state.tree.tree.children, true);
 
-    // Porta in vista la mossa attiva senza scrollare tutto il pannello.
+    // Porta in vista la mossa attiva SOLO dentro la move-list stessa: mai un
+    // semplice active.scrollIntoView(), che risalirebbe anche i contenitori
+    // scrollabili esterni (il pannello #analysis, che ora ha scroll proprio
+    // per il fix del bug del commento lungo) trascinando via il commento che
+    // si stava leggendo. Calcolo manuale = scroll ristretto a questo box.
     const active = container.querySelector('.move-list-move.active');
-    if (active) active.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    if (active) scrollWithinContainer(active, container);
+}
+
+/**
+ * Come active.scrollIntoView({block:'nearest'}), ma limitato al SOLO
+ * `container` dato: non tocca lo scroll di alcun antenato. Necessario perché
+ * la move-list vive dentro un pannello a sua volta scrollabile (vedi sopra).
+ *
+ * @param {HTMLElement} el
+ * @param {HTMLElement} container
+ */
+function scrollWithinContainer(el, container) {
+    const elRect = el.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    if (elRect.top < containerRect.top) {
+        container.scrollTop -= (containerRect.top - elRect.top);
+    } else if (elRect.bottom > containerRect.bottom) {
+        container.scrollTop += (elRect.bottom - containerRect.bottom);
+    }
 }
 
 /**

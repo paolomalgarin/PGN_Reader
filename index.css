@@ -227,6 +227,15 @@ body {
     flex-shrink: 0;
 }
 
+/* Rete di sicurezza extra: ora che il pannello stesso è scrollabile
+   (overflow-y:auto sopra), anche LUI è soggetto allo scroll-anchoring
+   nativo del browser quando il contenuto sopra il suo viewport interno
+   cambia altezza — stesso fenomeno del bug originale, ma un livello più
+   in profondità. */
+.tab-content {
+    overflow-anchor: none;
+}
+
 @keyframes fadeSlideIn {
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
