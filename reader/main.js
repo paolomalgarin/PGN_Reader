@@ -3,6 +3,7 @@ import { attachKeyboardNavigation, goBack, goForward, jumpToNode } from "./navig
 import { syncBoardToCurrentNode, setMoveArrowsEnabled, areMoveArrowsEnabled } from "./boardSync.js";
 import { saveArrowsAndHighlights } from "./commentFormat.js";
 import { playMoveSound, playMoveSoundForNode, playSound, setMuted, isMuted } from "./sound.js";
+import { confettiBurst } from "./confetti.js";
 import { initModeHandling, cycleMode, needsPgnGate } from "./mode.js";
 import { setHumanColor, maybePlayComputerMove, cancelPendingComputerMove, setAfterMoveCallback, recordHumanMove, getStreak, resetStreak } from "./drill.js";
 import { showPgnGate, hidePgnGate } from "./ui/pgnGate.js";
@@ -92,6 +93,7 @@ board.setOnMoveCallback((move) => {
             return;
         }
 
+        let isDrillCorrectMove = false;
         if (state.mode === 'DRILL') {
             const wasOnBook = state.tree.current.hasMoveChild(move.san);
             recordHumanMove(move.san); // aggiorna lo streak comunque (incrementa o azzera)
@@ -104,9 +106,22 @@ board.setOnMoveCallback((move) => {
                 notifyChange(); // riflette subito lo streak azzerato nella UI
                 return;
             }
+            isDrillCorrectMove = true;
         }
 
         state.tree.addMove(move.san);
+
+        // In drill una mossa "a libro" merita il chirp premiante invece del
+        // generico suono di mossa — ma scacco/matto/cattura restano quelli,
+        // sono informazioni sulla scacchiera, non solo un feedback del drill.
+        if (isDrillCorrectMove && !move.san.includes('#') && !move.san.includes('+') && !move.captured) {
+            syncBoardToCurrentNode(board);
+            playSound('correct');
+            notifyChange();
+            handleBoardMove();
+            if (state.mode === 'DRILL') maybePlayComputerMove(board);
+            return;
+        }
     } else {
         state.tree.moveUp();
     }
@@ -229,11 +244,20 @@ let lastShownStreak = -1;
 onStateChange(() => {
     const streak = getStreak();
     if (streak !== lastShownStreak) {
+        const increased = streak > lastShownStreak;
         lastShownStreak = streak;
         streakCountEl.textContent = streak;
+        streakEl.classList.toggle('lit', streak > 0);
         streakEl.classList.remove('wobble');
         void streakEl.offsetWidth; // forza il replay dell'animazione
         streakEl.classList.add('wobble');
+
+        // Milestone ogni 5 mosse a libro consecutive: piccola festa dorata,
+        // il momento "premiante" del drill che invoglia a continuare.
+        if (increased && streak > 0 && streak % 5 === 0) {
+            playSound('milestone');
+            confettiBurst(streakEl);
+        }
     }
 });
 

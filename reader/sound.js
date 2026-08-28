@@ -1,46 +1,171 @@
 /**
- * Effetti sonori dell'app. File attesi in /assets/audio/ (percorso relativo
- * alla pagina), elencati in fondo a questo file con il nome esatto che deve
- * avere ciascun file. Se un file manca o non può essere riprodotto (es.
- * autoplay bloccato dal browser prima di un'interazione), l'errore viene
+ * Effetti sonori dell'app, generati interamente via Web Audio API — nessun
+ * file .mp3 da scaricare o mantenere: ogni suono è sintetizzato al volo con
+ * oscillatori + inviluppi di volume, quindi funziona anche offline e pesa
+ * zero byte extra. Se il contesto audio non può partire (autoplay bloccato
+ * dal browser prima di un'interazione, o API assente) l'errore viene
  * semplicemente ignorato: un suono mancante non deve mai rompere l'app.
  */
 
-const SOUNDS = {
-    move: 'assets/audio/move.mp3',
-    capture: 'assets/audio/capture.mp3',
-    check: 'assets/audio/check.mp3',
-    gameEnd: 'assets/audio/game-end.mp3',
-    brilliant: 'assets/audio/brilliant.mp3',
-    nag: 'assets/audio/nag.mp3',
-    delete: 'assets/audio/delete.mp3',
-    error: 'assets/audio/error.mp3',
-    notify: 'assets/audio/notify.mp3',
-};
-
 let muted = false;
-const cache = new Map();
+let ctx = null;
 
-function getAudio(name) {
-    if (!cache.has(name)) {
-        const audio = new Audio(SOUNDS[name]);
-        audio.volume = 0.5;
-        cache.set(name, audio);
-    }
-    return cache.get(name);
+function getCtx() {
+    if (ctx) return ctx;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    return ctx;
+}
+
+function ensureRunning() {
+    const c = getCtx();
+    if (c && c.state === 'suspended') c.resume().catch(() => {});
+    return c;
 }
 
 /**
- * @param {'move'|'capture'|'check'|'gameEnd'|'brilliant'|'nag'|'delete'|'error'|'notify'} name
+ * Suona un singolo tono con inviluppo ADSR semplificato (attack/decay rapidi,
+ * poi release), così ogni nota ha un attacco morbido e nessun "click" digitale.
+ *
+ * @param {AudioContext} c
+ * @param {number} freq - Hz
+ * @param {number} startAt - offset in secondi da ora
+ * @param {number} dur - durata totale in secondi
+ * @param {Object} [opts]
+ */
+function tone(c, freq, startAt, dur, opts = {}) {
+    const {
+        type = 'sine',
+        peakGain = 0.22,
+        attack = 0.006,
+        release = null,
+        detune = 0,
+        glideTo = null,
+    } = opts;
+
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, c.currentTime + startAt);
+    if (detune) osc.detune.setValueAtTime(detune, c.currentTime + startAt);
+    if (glideTo) {
+        osc.frequency.exponentialRampToValueAtTime(glideTo, c.currentTime + startAt + dur);
+    }
+
+    const rel = release ?? dur * 0.7;
+    const t0 = c.currentTime + startAt;
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(peakGain, t0 + attack);
+    gain.gain.exponentialRampToValueAtTime(0.0005, t0 + attack + rel);
+
+    osc.connect(gain);
+    gain.connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+}
+
+/**
+ * Rumore bianco filtrato molto breve, usato per lo "swoosh" di cancellazione
+ * e per il ronzio d'errore — un oscillatore puro non basta a rendere questi
+ * due suoni riconoscibili dal resto della palette.
+ */
+function noiseBurst(c, startAt, dur, { peakGain = 0.12, filterFreq = 1200, filterType = 'bandpass' } = {}) {
+    const bufferSize = Math.ceil(c.sampleRate * dur);
+    const buffer = c.createBuffer(1, bufferSize, c.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+
+    const src = c.createBufferSource();
+    src.buffer = buffer;
+
+    const filter = c.createBiquadFilter();
+    filter.type = filterType;
+    filter.frequency.setValueAtTime(filterFreq, c.currentTime + startAt);
+
+    const gain = c.createGain();
+    const t0 = c.currentTime + startAt;
+    gain.gain.setValueAtTime(peakGain, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(c.destination);
+    src.start(t0);
+    src.stop(t0 + dur + 0.02);
+}
+
+// --- RICETTE: una funzione per ciascun suono, tutte in termini di tone()/noiseBurst() ---
+
+const RECIPES = {
+    move: (c) => {
+        tone(c, 520, 0, 0.09, { type: 'triangle', peakGain: 0.18, attack: 0.002, release: 0.08 });
+    },
+    capture: (c) => {
+        tone(c, 340, 0, 0.1, { type: 'square', peakGain: 0.14, attack: 0.001, release: 0.08, glideTo: 220 });
+        noiseBurst(c, 0, 0.05, { peakGain: 0.06, filterFreq: 2200 });
+    },
+    check: (c) => {
+        tone(c, 660, 0, 0.09, { type: 'triangle', peakGain: 0.2 });
+        tone(c, 880, 0.09, 0.14, { type: 'triangle', peakGain: 0.2 });
+    },
+    gameEnd: (c) => {
+        [523.25, 415.3, 349.23].forEach((f, i) => {
+            tone(c, f, i * 0.13, 0.32, { type: 'sine', peakGain: 0.18, release: 0.28 });
+        });
+    },
+    brilliant: (c) => {
+        // Piccolo arpeggio maggiore ascendente con "shimmer" finale: è il
+        // suono più festoso della palette, riservato al NAG "!!" / $3.
+        [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+            tone(c, f, i * 0.07, 0.22, { type: 'triangle', peakGain: 0.16, release: 0.18 });
+        });
+        tone(c, 1567.98, 0.28, 0.35, { type: 'sine', peakGain: 0.09, release: 0.32 });
+    },
+    nag: (c) => {
+        tone(c, 740, 0, 0.06, { type: 'sine', peakGain: 0.16, attack: 0.002, release: 0.05 });
+    },
+    delete: (c) => {
+        tone(c, 420, 0, 0.16, { type: 'sawtooth', peakGain: 0.1, glideTo: 140, release: 0.14 });
+        noiseBurst(c, 0, 0.12, { peakGain: 0.05, filterFreq: 800 });
+    },
+    error: (c) => {
+        tone(c, 220, 0, 0.16, { type: 'square', peakGain: 0.12, glideTo: 160, release: 0.14 });
+        tone(c, 160, 0.1, 0.18, { type: 'square', peakGain: 0.1, glideTo: 110, release: 0.16 });
+    },
+    notify: (c) => {
+        tone(c, 880, 0, 0.1, { type: 'sine', peakGain: 0.14, release: 0.09 });
+    },
+    // Mossa "a libro" in DRILL: chirp ascendente breve, la stessa grammatica
+    // sonora dei feedback "corretto" delle app di apprendimento.
+    correct: (c) => {
+        tone(c, 587.33, 0, 0.08, { type: 'sine', peakGain: 0.18, release: 0.07 });
+        tone(c, 880, 0.06, 0.13, { type: 'sine', peakGain: 0.2, release: 0.12 });
+    },
+    // Milestone di streak (ogni 5): piccola fanfara + coriandoli sonori.
+    milestone: (c) => {
+        [523.25, 659.25, 783.99, 1046.5, 1318.5].forEach((f, i) => {
+            tone(c, f, i * 0.055, 0.25, { type: 'triangle', peakGain: 0.17, release: 0.22 });
+        });
+        for (let i = 0; i < 6; i++) {
+            tone(c, 1400 + Math.random() * 800, 0.15 + i * 0.03, 0.12, {
+                type: 'sine', peakGain: 0.05, release: 0.1,
+            });
+        }
+    },
+};
+
+/**
+ * @param {'move'|'capture'|'check'|'gameEnd'|'brilliant'|'nag'|'delete'|'error'|'notify'|'correct'|'milestone'} name
  */
 export function playSound(name) {
-    if (muted || !SOUNDS[name]) return;
+    if (muted || !RECIPES[name]) return;
     try {
-        const audio = getAudio(name);
-        audio.currentTime = 0;
-        audio.play().catch(() => {}); // autoplay bloccato o simile: ignora silenziosamente
+        const c = ensureRunning();
+        if (!c) return;
+        RECIPES[name](c);
     } catch (err) {
-        // File mancante o non riproducibile: mai bloccare l'app per questo.
+        // Sintesi audio non disponibile per qualche motivo: mai bloccare l'app.
     }
 }
 
@@ -56,8 +181,8 @@ export function isMuted() {
  * Sceglie il suono giusto per il NODO su cui ci si trova ADESSO (dopo che
  * l'albero è già stato sincronizzato) — a differenza delle due funzioni
  * sotto (che guardano solo captured/SAN), questa controlla anche i NAG:
- * una mossa marcata "brillante" ($3) suona sempre brilliant.mp3, qualunque
- * sia la fonte della mossa (drag&drop, tastiera, move-list, mossa del pc in
+ * una mossa marcata "brillante" ($3) suona sempre brilliant, qualunque sia
+ * la fonte della mossa (drag&drop, tastiera, move-list, mossa del pc in
  * drill...). Va preferita a playMoveSound/playMoveSoundForSan ovunque sia
  * disponibile il nodo dell'albero.
  *

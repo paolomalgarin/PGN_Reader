@@ -7,6 +7,8 @@
     <title>PGN Reader</title>
     <link rel="shortcut icon" href="https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg"
         type="image/x-icon">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="index.css">
 </head>
 
@@ -103,9 +105,12 @@
     <div id="btn-flip-drill" class="drill-flip-btn">Flip board</div>
 
     <div id="drill-streak" class="drill-streak">
-        <span class="drill-streak-flame">🔥</span>
+        <span class="drill-streak-flame">👑</span>
         <span id="drill-streak-count">0</span>
     </div>
+
+    <!-- Canvas per il coriandoli d'oro ai milestone di streak in DRILL -->
+    <canvas id="confetti-canvas"></canvas>
 
     <!-- Shown only in READ mode while temporary (unsaved) moves are on the
          board — makes it clear you're off the tracked PGN line, with a way
