@@ -48,9 +48,18 @@
                 <!-- Chess.com-style navigation arrows — handy on mobile,
                      where there's no keyboard to use arrow keys with. -->
                 <div class="nav-buttons">
-                    <button id="btn-nav-first" class="nav-btn" title="Start">⏮</button>
-                    <button id="btn-nav-back" class="nav-btn" title="Back">◀</button>
-                    <button id="btn-nav-forward" class="nav-btn" title="Forward">▶</button>
+                    <button id="btn-nav-first" class="nav-btn nav-btn-ghost" title="Start">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6l-7 6 7 6"/><path d="M9 6l-7 6 7 6"/></svg>
+                    </button>
+                    <button id="btn-nav-back" class="nav-btn nav-btn-primary" title="Back">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"/></svg>
+                    </button>
+                    <button id="btn-nav-forward" class="nav-btn nav-btn-primary" title="Forward">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>
+                    </button>
+                    <button id="btn-nav-last" class="nav-btn nav-btn-ghost" title="End of this line">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l7 6-7 6"/><path d="M15 6l7 6-7 6"/></svg>
+                    </button>
                 </div>
 
                 <div id="engine-info">Engine off</div>
