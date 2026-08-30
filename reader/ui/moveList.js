@@ -5,6 +5,11 @@ let board = null;
 let container = null;
 let afterJump = null; // callback esterna (main.js): sync + suono + notifyChange + motore
 
+// Oltre questa profondità le varianti annidate smettono di rientrare
+// ulteriormente (eviterebbe di restringere troppo la colonna disponibile su
+// schermi piccoli) e condividono tutte lo stesso stile "profondo".
+const MAX_INDENT_DEPTH = 4;
+
 /**
  * @param {Chessboard} chessboard
  * @param {Function} [afterJumpCallback] - richiamata dopo un salto riuscito
@@ -30,7 +35,10 @@ function render() {
         return;
     }
 
-    renderChildren(container, state.tree.tree.children, true);
+    const rootLine = document.createElement('div');
+    rootLine.className = 'move-list-line depth-0';
+    renderLine(rootLine, state.tree.tree.children, true, 0);
+    container.appendChild(rootLine);
 
     // Porta in vista la mossa attiva SOLO dentro la move-list stessa: mai un
     // semplice active.scrollIntoView(), che risalirebbe anche i contenitori
@@ -61,49 +69,72 @@ function scrollWithinContainer(el, container) {
 }
 
 /**
- * Renderizza una sequenza di mosse: la prima (mainline) continua la riga
- * corrente, le altre sono varianti alternative mostrate tra parentesi subito
- * dopo — stessa struttura ricorsiva di PGNReader.write(), ma con nodi DOM
- * cliccabili invece di testo.
+ * Renderizza una sequenza di mosse allo STESSO livello (mainline al livello
+ * corrente): la prima (mainline) continua a fluire nello stesso blocco
+ * `lineEl`, mentre ogni variante alternativa apre un NUOVO blocco figlio,
+ * rientrato e con un bordo colorato in base alla profondità.
+ *
+ * A differenza della vecchia resa "tra parentesi in linea" (che per partite
+ * con più diramazioni annidate diventava un muro di testo illeggibile),
+ * ogni variante è ora visivamente un blocco a parte: basta seguire il
+ * rientro e il colore del bordo per capire subito a che livello si è, senza
+ * dover contare le parentesi.
+ *
+ * @param {HTMLElement} lineEl - blocco DOM in cui continuare la linea corrente
+ * @param {MoveNode[]} children - tutte le continuazioni a questo punto (la
+ *        prima è la mainline, le altre sono varianti alternative)
+ * @param {boolean} isFirstInSequence
+ * @param {number} depth - profondità di annidamento (0 = mainline principale)
  */
-function renderChildren(parent, children, isFirstInSequence) {
+function renderLine(lineEl, children, isFirstInSequence, depth) {
     if (!children || children.length === 0) return;
 
     const [mainChild, ...variations] = children;
 
-    appendMoveNumber(parent, mainChild, isFirstInSequence);
-    appendMoveSpan(parent, mainChild);
+    appendMoveChip(lineEl, mainChild, isFirstInSequence);
 
     variations.forEach(variation => {
-        const varEl = document.createElement('span');
-        varEl.className = 'move-list-variation';
-        varEl.append('(');
-        appendMoveNumber(varEl, variation, true);
-        appendMoveSpan(varEl, variation);
-        renderChildren(varEl, variation.children, false);
-        varEl.append(')');
-        parent.appendChild(varEl);
-        parent.append(' ');
+        const varBlock = document.createElement('div');
+        const d = Math.min(depth + 1, MAX_INDENT_DEPTH);
+        varBlock.className = `move-list-line move-list-variation depth-${d}`;
+
+        const marker = document.createElement('span');
+        marker.className = 'move-list-branch-marker';
+        marker.textContent = '↳';
+        varBlock.appendChild(marker);
+
+        appendMoveChip(varBlock, variation, true);
+        renderLine(varBlock, variation.children, false, depth + 1);
+
+        lineEl.appendChild(varBlock);
     });
 
-    renderChildren(parent, mainChild.children, false);
+    renderLine(lineEl, mainChild.children, false, depth);
 }
 
-function appendMoveNumber(parent, node, isFirstInSequence) {
+/**
+ * Aggiunge (numero di mossa incluso, se serve) la "pillola" cliccabile di
+ * una singola mossa al blocco dato.
+ */
+function appendMoveChip(parent, node, isFirstInSequence) {
     const isWhite = node.ply % 2 === 1;
     if (isWhite) {
-        parent.append(`${Math.ceil(node.ply / 2)}.`);
+        const num = document.createElement('span');
+        num.className = 'move-list-number';
+        num.textContent = `${Math.ceil(node.ply / 2)}.`;
+        parent.appendChild(num);
     } else if (isFirstInSequence) {
-        parent.append(`${Math.ceil(node.ply / 2)}...`);
+        const num = document.createElement('span');
+        num.className = 'move-list-number';
+        num.textContent = `${Math.ceil(node.ply / 2)}...`;
+        parent.appendChild(num);
     }
-}
 
-function appendMoveSpan(parent, node) {
     const span = document.createElement('span');
     span.className = 'move-list-move';
     if (node === state.tree.current) span.classList.add('active');
 
-    span.textContent = node.move;
+    span.append(node.move);
 
     const nag = node.nag && node.nag[0];
     if (nag) {
@@ -116,7 +147,6 @@ function appendMoveSpan(parent, node) {
 
     span.addEventListener('click', () => onMoveClick(node));
     parent.appendChild(span);
-    parent.append(' ');
 }
 
 function onMoveClick(node) {
