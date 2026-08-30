@@ -635,43 +635,81 @@ body.mode-read.exploring .exploration-banner {
     border-left-color: var(--border);
 }
 
-/* Freccette di navigazione stile chess.com — fisse in basso */
+/* Freccette di navigazione — pillola fissa in basso, stile chess.com ma con
+   gerarchia visiva chiara: avanti/indietro (le più usate) sono i due
+   pulsanti pieni al centro; inizio/fine linea sono "ghost" più discreti ai
+   lati, per non competere visivamente con le due azioni principali. */
 .nav-buttons {
     position: fixed;
     bottom: 14px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
+    align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     z-index: 90;
     background-color: var(--panel);
     border: solid 1px var(--border);
     border-radius: var(--radius-pill);
-    padding: 5px;
+    padding: 6px;
     box-shadow: var(--shadow-card);
 }
 
 .nav-btn {
-    min-width: 44px;
-    font-size: 16px;
-    padding: 8px 10px;
-    background-color: transparent;
-    color: var(--text);
+    width: 42px;
+    height: 42px;
+    min-width: 0;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     border: none;
-    border-radius: var(--radius-pill);
+    border-radius: 50%;
     box-shadow: none;
+    transition: transform .12s var(--ease-bounce), background-color .15s ease, color .15s ease;
 }
 
-.nav-btn:hover {
+.nav-btn svg {
+    display: block;
+}
+
+/* Indietro/Avanti: le azioni che si usano davvero in continuazione — più
+   grandi, riempite d'oro, sempre "a portata di pollice" su mobile. */
+.nav-btn-primary {
+    width: 48px;
+    height: 48px;
+    background: linear-gradient(160deg, var(--gold-strong), var(--gold-dim));
+    color: var(--gold-ink);
+    box-shadow: 0 3px 0 0 #a87c1f, 0 6px 14px -6px rgba(240,185,61,.5);
+}
+
+.nav-btn-primary:hover {
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+}
+
+.nav-btn-primary:active {
+    transform: translateY(2px) scale(0.96);
+    box-shadow: 0 1px 0 0 #a87c1f, 0 2px 6px -3px rgba(240,185,61,.5);
+}
+
+/* Inizio/Fine linea: azioni "di salto", occasionali — discrete finché non
+   servono, per non rubare peso visivo alle due frecce centrali. */
+.nav-btn-ghost {
+    background-color: transparent;
+    color: var(--text-faint-solid);
+}
+
+.nav-btn-ghost:hover {
     background-color: var(--panel-raised);
-    filter: none;
+    color: var(--text);
     transform: none;
 }
 
-.nav-btn:active {
-    transform: scale(.9);
-    box-shadow: none;
+.nav-btn-ghost:active {
+    transform: scale(.88);
 }
 
 .move-list-header {
@@ -706,25 +744,51 @@ body.mode-read.exploring .exploration-banner {
     border-color: transparent;
 }
 
-/* Move-list ordinata e cliccabile, stile "estratto conto" (righe leggere) */
+/* Move-list ordinata e cliccabile. Le varianti non sono più testo tra
+   parentesi in linea (facile da perdere in partite con più diramazioni): ogni
+   variante è un blocco a sé, rientrato e con un bordo colorato in base alla
+   profondità — basta seguire il rientro/colore per capire subito "dove si è"
+   nell'albero, invece di contare le parentesi. */
 .move-list {
     text-align: left;
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 2.1;
     color: var(--text-muted);
     background-color: var(--panel-alt);
     border: solid 1px var(--border-soft);
     border-radius: var(--radius-sm);
     padding: 10px 12px;
     margin-top: 8px;
-    max-height: 220px;
+    max-height: 280px;
     overflow-y: auto;
 }
 
 .move-list-empty {
     color: var(--text-faint-solid);
     font-style: italic;
+}
+
+/* Un "blocco linea" è una sequenza continua di mosse (la mainline a un dato
+   livello, oppure il corpo di una variante): fluisce a capo automaticamente
+   come dei chip, e ogni variante figlia forza a sua volta un a-capo pieno
+   (flex-basis:100%) restando comunque annidata visivamente nello stesso
+   blocco padre. */
+.move-list-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 1px 2px;
+    line-height: 2.1;
+}
+
+.move-list-number {
+    color: var(--text-faint-solid);
+    padding: 0 2px 0 5px;
+    user-select: none;
+}
+
+.move-list-line.depth-0 > .move-list-number:first-child {
+    padding-left: 0;
 }
 
 .move-list-move {
@@ -756,13 +820,50 @@ body.mode-read.exploring .exploration-banner {
     vertical-align: -2px;
 }
 
+/* --- Varianti: blocco rientrato, bordo colorato per profondità --- */
+
 .move-list-variation {
+    flex-basis: 100%;
+    align-items: baseline;
+    margin: 3px 0 3px 8px;
+    padding: 3px 0 3px 10px;
+    border-left: solid 2px var(--violet);
+    font-size: 12.5px;
+}
+
+.move-list-branch-marker {
     color: var(--text-faint-solid);
-    font-size: 12px;
+    font-size: 11px;
+    margin-right: 3px;
+    user-select: none;
 }
 
 .move-list-variation .move-list-move {
     color: var(--text-muted);
+}
+
+.move-list-variation .move-list-move.active {
+    color: var(--gold-ink);
+}
+
+.move-list-variation.depth-2 {
+    margin-left: 18px;
+    border-left-color: var(--violet-strong);
+    opacity: .92;
+}
+
+.move-list-variation.depth-3 {
+    margin-left: 28px;
+    border-left-color: var(--gold-dim);
+    opacity: .86;
+    font-size: 12px;
+}
+
+.move-list-variation.depth-4 {
+    margin-left: 36px;
+    border-left-color: var(--border);
+    opacity: .8;
+    font-size: 12px;
 }
 
 /* --- TAB EDIT --- */
