@@ -86,6 +86,24 @@ setAfterMoveCallback(afterNavigate);
 board.setOnMoveCallback((move) => {
     if (move && move.san) {
         if (state.mode === 'READ') {
+            const knownChild = state.tree.current.getMoveChild(move.san);
+
+            if (knownChild) {
+                // La mossa coincide esattamente con la prossima mossa del PGN:
+                // è navigazione vera, non esplorazione — prima di questo fix
+                // qualunque mossa fatta a mano in READ veniva sempre trattata
+                // come temporanea, anche quando ricalcava il PGN alla lettera.
+                state.tree.addMove(move.san); // riusa knownChild, non ne crea uno nuovo
+                syncBoardToCurrentNode(board);
+                playMoveSoundForNode(state.tree.current);
+                setExploring(false);
+                notifyChange();
+                handleBoardMove();
+                return;
+            }
+
+            // Mossa fuori dal PGN: resta pura esplorazione temporanea sulla
+            // board, mai aggiunta all'albero (comportamento invariato).
             board.clearAvailableMoveArrows(); // non più valide per questa posizione temporanea
             playMoveSound(move);
             handleBoardMove();
@@ -167,6 +185,12 @@ document.getElementById('btn-nav-first').addEventListener('click', () => {
     while (!state.tree.isAtRoot()) {
         if (!goBack(board, null)) break; // salta afterNavigate ad ogni passo: si sincronizza una sola volta alla fine
     }
+    afterNavigate();
+});
+document.getElementById('btn-nav-last').addEventListener('click', () => {
+    // Avanza sulla mainline (children[0], mai dentro le varianti) finché ci
+    // sono continuazioni note, fermandosi in fondo alla linea corrente.
+    while (goForward(board, null)) { /* salta afterNavigate ad ogni passo */ }
     afterNavigate();
 });
 
