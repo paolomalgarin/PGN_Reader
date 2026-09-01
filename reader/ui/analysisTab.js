@@ -173,7 +173,7 @@ function updateEvalBar(evalData) {
 let lastRenderedNode = null;
 
 function renderComment() {
-    els.comment.innerHTML = renderCommentHTML(state.tree.current.comment)
+    els.comment.innerHTML = renderCommentHTML(state.tree.current.comment, getSanPath(state.tree.current))
         || '<div class="cb-comment-empty">No comment on this move.</div>';
 
     // Solo quando la mossa corrente è CAMBIATA davvero (non per qualsiasi
@@ -185,4 +185,18 @@ function renderComment() {
         const panel = document.getElementById('analysis');
         if (panel) panel.scrollTop = 0;
     }
+}
+
+/**
+ * @param {MoveNode} node
+ * @returns {String[]} mosse SAN dalla radice fino a `node` (radice esclusa)
+ */
+function getSanPath(node) {
+    const path = [];
+    let n = node;
+    while (n && n.parent) {
+        path.unshift(n.move);
+        n = n.parent;
+    }
+    return path;
 }

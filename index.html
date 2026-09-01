@@ -94,9 +94,19 @@
                 <input type="file" id="pgn-file-input" accept=".pgn,.txt,text/plain,*/*" />
                 <p id="pgn-import-error" class="error-text" hidden></p>
 
-                <label class="field-label" for="pgn-export-preview">Current PGN</label>
+                <div class="pgn-preview-header">
+                    <label class="field-label" for="pgn-export-preview">Current PGN</label>
+                    <label class="pgn-clean-toggle-label">
+                        <input type="checkbox" id="pgn-preview-clean-toggle" />
+                        Clean preview
+                    </label>
+                </div>
                 <textarea id="pgn-export-preview" class="pgn-export-preview" readonly spellcheck="false"></textarea>
-                <button id="btn-download-pgn">Download .pgn</button>
+
+                <div class="export-buttons">
+                    <button id="btn-download-pgn">Download .pgn</button>
+                    <button id="btn-download-pgn-clean" class="secondary" title="No arrows, highlights or opening names — just your own notes">Download clean .pgn</button>
+                </div>
             </div>
         </div>
 

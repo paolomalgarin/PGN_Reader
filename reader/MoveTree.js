@@ -4,7 +4,7 @@ import { MoveNode } from "./MoveNode.js";
 // uno esplicito (nuovo albero vuoto, o PGN senza commento pre-mossa): usa
 // gli stessi tag <opening>/<variation> di qualunque altro commento, quindi è
 // modificabile con lo stesso editor di testo del tab EDIT.
-const DEFAULT_ROOT_COMMENT =
+export const DEFAULT_ROOT_COMMENT =
 `<opening>Starting Position</opening>
 
 <variation>Traditional game</variation>`;
@@ -12,16 +12,26 @@ const DEFAULT_ROOT_COMMENT =
 export class MoveTree {
     tree; // MoveNode
     current; // MoveNode
+    headers; // Object<String,String> - tutti i tag "[Nome \"Valore\"]" del PGN originale
+    startingFen; // String|null - FEN di partenza se diversa da quella standard (Chess960/posizione custom), altrimenti null
 
     /**
-     * @param {MoveNode} tree 
+     * @param {MoveNode} tree
+     * @param {Object} [opts]
+     * @param {String|null} [opts.startingFen] - FEN della posizione di partenza se non standard
+     * @param {String} [opts.defaultComment] - commento da usare sulla radice se il PGN non ne fornisce uno
+     * @param {Object} [opts.headers] - tag "[...]" del PGN originale, preservati per il re-export
      */
-    constructor(tree = new MoveNode({ move: 'root', ply: 0 })) {
+    constructor(tree = new MoveNode({ move: 'root', ply: 0 }), opts = {}) {
+        const { startingFen = null, defaultComment = DEFAULT_ROOT_COMMENT, headers = {} } = opts;
+
         this.tree = tree;
         if (!this.tree.comment) {
-            this.tree.setComment(DEFAULT_ROOT_COMMENT);
+            this.tree.setComment(defaultComment);
         }
         this.current = this.tree;
+        this.startingFen = startingFen;
+        this.headers = headers;
     }
 
     log() {

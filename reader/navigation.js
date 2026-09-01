@@ -25,7 +25,12 @@ function rebuildAndJump(board, targetNode) {
         n = n.parent;
     }
 
-    const scratch = new window.Chess();
+    // Un PGN può partire da una posizione diversa da quella standard (Chess960
+    // o una posizione custom via header FEN/SetUp): senza questo, chess.js
+    // ricostruirebbe SEMPRE dalla partita standard, calcolando mosse/case
+    // sbagliate per qualunque partita non "tradizionale".
+    const startingFen = state.tree.startingFen || undefined;
+    const scratch = startingFen ? new window.Chess(startingFen) : new window.Chess();
     let lastMoveResult = null;
     for (const san of path) {
         lastMoveResult = scratch.move(san);
@@ -33,7 +38,8 @@ function rebuildAndJump(board, targetNode) {
     }
 
     const lastMove = lastMoveResult ? { from: lastMoveResult.from, to: lastMoveResult.to } : null;
-    board.setPosition(path.length ? scratch.fen() : 'start', lastMove);
+    const startingPosition = startingFen || 'start';
+    board.setPosition(path.length ? scratch.fen() : startingPosition, lastMove);
     state.tree.current = targetNode;
     return true;
 }

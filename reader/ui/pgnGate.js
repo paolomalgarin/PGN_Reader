@@ -32,7 +32,7 @@ function ensureOverlay() {
         errorEl.hidden = true;
         try {
             const tree = await loadPgnFromFile(file);
-            if (boardRef) boardRef.setPosition('start');
+            if (boardRef) boardRef.setPosition(tree.startingFen || 'start');
             setTree(tree);
             if (boardRef) syncBoardToCurrentNode(boardRef);
             // hidePgnGate() viene chiamato dal listener centrale in main.js

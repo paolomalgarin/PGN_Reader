@@ -1,3 +1,5 @@
+import { lookupOpening } from "./eco.js";
+
 /**
  * Il commento di una mossa può contenere un piccolo set di tag custom per
  * dargli uno stile in fase di visualizzazione:
@@ -59,21 +61,80 @@ export function isCommentEmpty(raw) {
 }
 
 /**
+ * Estrae solo il testo libero (tag <content>, o l'intero commento se privo
+ * di tag riconosciuti) da un commento grezzo, scartando opening/variation/
+ * line e i metadati arrows/highlights. Usato dall'export "pulito" del PGN
+ * (vedi PGNReader.write con l'opzione clean), che non deve MAI contenere le
+ * frecce/evidenziazioni disegnate a mano né i nomi apertura auto-generati —
+ * solo le note scritte davvero dall'utente.
+ *
+ * @param {String} raw
+ * @returns {String}
+ */
+export function extractContentOnly(raw) {
+    if (!raw) return '';
+    return parseComment(raw).content || '';
+}
+
+/**
  * Costruisce l'HTML da mostrare nel tab analysis a partire dal commento
  * grezzo. Ogni parte presente diventa un elemento con la propria classe CSS
  * (cb-comment-opening, cb-comment-variation, cb-comment-line,
  * cb-comment-content) così lo stile si definisce tutto in CSS.
  *
+ * Se <opening>/<variation>/<line> non sono compilati (tag assente o vuoto),
+ * il buco viene riempito automaticamente cercando la posizione nel database
+ * ECO (vedi eco.js): serve la sequenza di mosse dalla radice fino a questo
+ * nodo. Se non si trova nulla (posizione fuori teoria, Chess960, ecc.) il
+ * nome dell'apertura mostra "Unknown opening" in stile smorzato, per
+ * segnalare chiaramente che non è un dato compilato — mai un campo che
+ * sembra "vero" ma è in realtà un placeholder silenzioso.
+ *
  * @param {String} raw
+ * @param {String[]} [sanPath] - mosse SAN dalla radice al nodo corrente,
+ *        usate solo per l'eventuale auto-fill dal database ECO
  * @returns {String} HTML (stringa vuota se non c'è nulla da mostrare)
  */
-export function renderCommentHTML(raw) {
+export function renderCommentHTML(raw, sanPath = []) {
     const parts = parseComment(raw);
     const blocks = [];
 
-    if (parts.opening) blocks.push(`<div class="cb-comment-opening">${escapeHTML(parts.opening)}</div>`);
-    if (parts.variation) blocks.push(`<div class="cb-comment-variation">${escapeHTML(parts.variation)}</div>`);
-    if (parts.line) blocks.push(`<div class="cb-comment-line">${escapeHTML(parts.line)}</div>`);
+    const needsOpening = !parts.opening;
+    const needsVariation = !parts.variation;
+    const needsLine = !parts.line;
+    const ecoMatch = (needsOpening || needsVariation || needsLine)
+        ? lookupOpening(sanPath)
+        : null;
+
+    let openingText = parts.opening;
+    let openingIsFallback = false;
+    if (needsOpening) {
+        if (ecoMatch) {
+            openingText = ecoMatch.family;
+        } else {
+            openingText = 'Unknown opening';
+            openingIsFallback = true;
+        }
+    }
+
+    let variationText = parts.variation;
+    if (needsVariation && ecoMatch && ecoMatch.subVariation) {
+        variationText = ecoMatch.subVariation;
+    }
+
+    let lineText = parts.line;
+    if (needsLine && ecoMatch) {
+        lineText = ecoMatch.eco;
+    }
+
+    if (openingText) {
+        const cls = openingIsFallback
+            ? 'cb-comment-opening cb-comment-opening-fallback'
+            : 'cb-comment-opening';
+        blocks.push(`<div class="${cls}">${escapeHTML(openingText)}</div>`);
+    }
+    if (variationText) blocks.push(`<div class="cb-comment-variation">${escapeHTML(variationText)}</div>`);
+    if (lineText) blocks.push(`<div class="cb-comment-line">${escapeHTML(lineText)}</div>`);
     if (parts.content) blocks.push(`<div class="cb-comment-content">${escapeHTML(parts.content)}</div>`);
 
     return blocks.join('');

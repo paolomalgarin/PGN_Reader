@@ -15,12 +15,16 @@ export function initExportTab(chessboard) {
     els = {
         fileInput: document.getElementById('pgn-file-input'),
         btnDownload: document.getElementById('btn-download-pgn'),
+        btnDownloadClean: document.getElementById('btn-download-pgn-clean'),
         preview: document.getElementById('pgn-export-preview'),
         error: document.getElementById('pgn-import-error'),
+        cleanToggle: document.getElementById('pgn-preview-clean-toggle'),
     };
 
     els.fileInput.addEventListener('change', onFileChosen);
     els.btnDownload.addEventListener('click', onDownloadClick);
+    els.btnDownloadClean.addEventListener('click', onDownloadCleanClick);
+    els.cleanToggle.addEventListener('change', refreshPreview);
 
     onStateChange(refreshPreview);
     refreshPreview();
@@ -33,7 +37,7 @@ async function onFileChosen(e) {
     els.error.hidden = true;
     try {
         const tree = await loadPgnFromFile(file);
-        board.setPosition('start');
+        board.setPosition(tree.startingFen || 'start');
         setTree(tree);
         syncBoardToCurrentNode(board);
     } catch (err) {
@@ -49,6 +53,20 @@ function onDownloadClick() {
     downloadPgnText(pgn, 'game.pgn');
 }
 
+/**
+ * Export "pulito": ogni commento viene ridotto al solo testo libero scritto
+ * dall'utente (tag <content>), senza frecce/evidenziazioni disegnate a mano
+ * né i nomi apertura/variante/linea (manuali o auto-generati dal database
+ * ECO) — pensato per condividere la partita altrove senza il "rumore"
+ * specifico di quest'app. L'export normale sopra resta comunque disponibile
+ * invariato.
+ */
+function onDownloadCleanClick() {
+    const pgn = PGNReader.write(state.tree, { clean: true });
+    downloadPgnText(pgn, 'game-clean.pgn');
+}
+
 function refreshPreview() {
-    els.preview.value = PGNReader.write(state.tree);
+    const clean = !!els.cleanToggle.checked;
+    els.preview.value = PGNReader.write(state.tree, { clean });
 }

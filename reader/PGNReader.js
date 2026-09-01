@@ -1,5 +1,15 @@
 import { MoveNode } from "./MoveNode.js";
-import { MoveTree } from "./MoveTree.js";
+import { MoveTree, DEFAULT_ROOT_COMMENT } from "./MoveTree.js";
+import { extractContentOnly } from "./commentFormat.js";
+import { detectStartingPosition, defaultVariationLabelFor } from "./startingPosition.js";
+
+// Riconosce le righe di intestazione "[Nome "Valore"]" del "Seven Tag Roster"
+// PGN (Event/Site/Date/... ma anche tag custom come FEN/SetUp/Variant/ECO).
+const HEADER_LINE_REGEX = /^\s*\[(\w+)\s+"((?:[^"\\]|\\.)*)"\]\s*$/gm;
+
+// Ordine convenzionale del "Seven Tag Roster": questi vanno scritti per
+// primi in fase di export, il resto segue nell'ordine in cui è stato letto.
+const HEADER_PRIORITY = ['Event', 'Site', 'Date', 'Round', 'White', 'Black', 'Result'];
 
 export class PGNReader {
     static TOKEN_REGEX = new RegExp(
@@ -16,20 +26,47 @@ export class PGNReader {
     );
 
     /**
-     * @param {String} pgnString 
+     * @param {String} pgnString
      * @returns {MoveTree}
      */
     static read(pgnString) {
-        let tree = null;
+        // FONDAMENTALE: gli header "[...]" vanno tolti PRIMA di tokenizzare il
+        // movetext, non semplicemente "ignorati" dal tokenizer. Il valore di
+        // un header (in particolare il FEN di partenza per Chess960/posizioni
+        // custom) può contenere frammenti che sembrano mosse valide — es. un
+        // alfiere nero in una casa con case vuote adiacenti nel FEN produce
+        // testo tipo "3b4", che la regex SAN interpreta come una mossa vera,
+        // corrompendo tutto l'albero. Separare nettamente header e movetext
+        // elimina il problema alla radice, qualunque sia il contenuto degli
+        // header.
+        const { headers, movetext } = this._splitHeaders(pgnString);
+        const { kind, fen } = detectStartingPosition(headers);
 
-        const tokens = this._tokenize(pgnString);
-        // console.log(tokens);
+        const tokens = this._tokenize(movetext);
+        const rootNode = this._buildRootNode(tokens);
 
-        tree = this._mkTree(tokens, 1);
+        const defaultComment = kind === 'standard'
+            ? DEFAULT_ROOT_COMMENT
+            : `<opening>Starting Position</opening>\n\n<variation>${defaultVariationLabelFor(kind)}</variation>`;
 
-        // tree.log();
+        return new MoveTree(rootNode, { startingFen: fen, defaultComment, headers });
+    }
 
-        return tree;
+    /**
+     * Separa gli header "[Tag "Valore"]" dal resto del testo (il movetext
+     * vero e proprio), che gli header possono precedere ovunque nel file (non
+     * necessariamente solo in cima, anche se è la convenzione standard).
+     *
+     * @param {String} pgnString
+     * @returns {{headers: Object<String,String>, movetext: String}}
+     */
+    static _splitHeaders(pgnString) {
+        const headers = {};
+        const movetext = pgnString.replace(HEADER_LINE_REGEX, (_match, name, value) => {
+            headers[name] = value.replace(/\\(.)/g, '$1'); // de-escape \" e \\
+            return '';
+        });
+        return { headers, movetext };
     }
 
     /**
@@ -52,10 +89,10 @@ export class PGNReader {
 
     /**
      * @param {Object[]} tokens
-     * @param {int} startingPly
-     * @returns {MoveNode} 
+     * @returns {MoveNode} il nodo radice grezzo (senza commento di default né
+     *          startingFen/headers: quelli li applica read() al MoveTree)
      */
-    static _mkTree(tokens) {
+    static _buildRootNode(tokens) {
         let tree = new MoveNode({
             move: 'root',
             ply: 0
@@ -65,44 +102,43 @@ export class PGNReader {
 
         let currentNode = tree;
         let ply = 1;
-        
-        for(let i = 0; i < tokens.length; i++) {
+
+        for (let i = 0; i < tokens.length; i++) {
             const token = tokens[i];
 
-            if(token.type === 'san') {
+            if (token.type === 'san') {
                 let node = new MoveNode({
                     move: token.str,
                     ply: ply++,
                 });
 
                 currentNode.addChildren(node);
-                
+
                 currentNode = node;
 
-            } else if(token.type === 'comment') {
+            } else if (token.type === 'comment') {
                 // token.str è l'intero match "{...}" comprese le graffe: le togliamo
                 // per tenere in node.comment solo il contenuto pulito. write() le
                 // riaggiunge in fase di export — così il round-trip read→write→read
                 // resta coerente e non si accumulano graffe doppie.
                 currentNode.setComment(token.str.slice(1, -1));
 
-            } else if(token.type === 'nag') {
+            } else if (token.type === 'nag') {
                 currentNode.addNag(token.str);
 
-            } else if(token.type === 'variationStart') {
+            } else if (token.type === 'variationStart') {
                 stack.push(currentNode);
                 plyStack.push(ply);
                 ply--;
                 currentNode = currentNode.parent;
-                
-            } else if(token.type === 'variationEnd') {
+
+            } else if (token.type === 'variationEnd') {
                 ply = plyStack.pop();
-                currentNode = stack.pop();   
+                currentNode = stack.pop();
             }
         }
 
-        // tree = tree.removeChild(0);
-        return new MoveTree(tree);
+        return tree;
     }
 
     // ----- SCRITTURA (albero -> stringa PGN) -----
@@ -113,15 +149,58 @@ export class PGNReader {
      * lo stesso albero.
      *
      * @param {MoveTree} tree
+     * @param {Object} [options]
+     * @param {boolean} [options.clean] - se true, ogni commento viene ridotto
+     *        al solo testo libero (tag <content>), scartando opening/
+     *        variation/line (compresi quelli auto-generati dal database ECO)
+     *        e i metadati di frecce/evidenziazioni disegnate a mano — un PGN
+     *        "pulito" pensato per essere condiviso o letto altrove.
      * @returns {String}
      */
-    static write(tree) {
+    static write(tree, options = {}) {
+        const { clean = false } = options;
+
+        const headerBlock = this._writeHeaders(tree);
         const parts = [];
-        if (tree.tree.comment) {
-            parts.push(`{${tree.tree.comment}}`);
+
+        const rootComment = clean ? extractContentOnly(tree.tree.comment) : tree.tree.comment;
+        if (rootComment) {
+            parts.push(`{${rootComment}}`);
         }
-        parts.push(...this._writeChildren(tree.tree.children, true));
-        return parts.join(' ').trim();
+        parts.push(...this._writeChildren(tree.tree.children, true, clean));
+
+        const movetext = parts.join(' ').trim();
+        return headerBlock ? `${headerBlock}\n\n${movetext}` : movetext;
+    }
+
+    /**
+     * Ricostruisce il blocco di header "[Tag "Valore"]" per il file esportato:
+     * quelli originali del PGN caricato (se presenti), più SetUp/FEN se
+     * l'albero parte da una posizione non standard — altrimenti riaprire il
+     * file esportato altrove lo farebbe assumere (erroneamente) partito dalla
+     * posizione standard.
+     *
+     * @param {MoveTree} tree
+     * @returns {String} stringa vuota se non c'è nessun header da scrivere
+     */
+    static _writeHeaders(tree) {
+        const headers = { ...(tree.headers || {}) };
+        if (tree.startingFen) {
+            headers.SetUp = '1';
+            headers.FEN = tree.startingFen;
+        }
+
+        const keys = Object.keys(headers);
+        if (keys.length === 0) return '';
+
+        const ordered = [
+            ...HEADER_PRIORITY.filter(k => k in headers),
+            ...keys.filter(k => !HEADER_PRIORITY.includes(k)),
+        ];
+
+        return ordered
+            .map(key => `[${key} "${String(headers[key]).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"]`)
+            .join('\n');
     }
 
     /**
@@ -135,26 +214,27 @@ export class PGNReader {
      * @param {boolean} isFirstInSequence - se il primo figlio apre una nuova
      *        sequenza (inizio partita o inizio variante) e quindi, se è una
      *        mossa del nero, va scritto col numero di mossa e i tre puntini.
+     * @param {boolean} clean
      * @returns {String[]} array di token di testo, da unire con spazi
      */
-    static _writeChildren(children, isFirstInSequence) {
+    static _writeChildren(children, isFirstInSequence, clean) {
         if (!children || children.length === 0) return [];
 
         const [mainChild, ...variations] = children;
         const parts = [this._writeMoveToken(mainChild, isFirstInSequence)];
 
-        const mainSuffix = this._writeNagsAndComment(mainChild);
+        const mainSuffix = this._writeNagsAndComment(mainChild, clean);
         if (mainSuffix) parts.push(mainSuffix);
 
         variations.forEach(variation => {
             const inner = [this._writeMoveToken(variation, true)];
-            const vSuffix = this._writeNagsAndComment(variation);
+            const vSuffix = this._writeNagsAndComment(variation, clean);
             if (vSuffix) inner.push(vSuffix);
-            inner.push(...this._writeChildren(variation.children, false));
+            inner.push(...this._writeChildren(variation.children, false, clean));
             parts.push('(' + inner.join(' ') + ')');
         });
 
-        parts.push(...this._writeChildren(mainChild.children, false));
+        parts.push(...this._writeChildren(mainChild.children, false, clean));
 
         return parts;
     }
@@ -174,12 +254,16 @@ export class PGNReader {
 
     /**
      * @param {MoveNode} node
+     * @param {boolean} clean
      * @returns {String} es. "$1 {bella mossa}", oppure stringa vuota se non c'è nulla
      */
-    static _writeNagsAndComment(node) {
+    static _writeNagsAndComment(node, clean) {
         const bits = [];
         if (node.nag && node.nag.length) bits.push(node.nag.join(' '));
-        if (node.comment) bits.push(`{${node.comment}}`);
+
+        const comment = clean ? extractContentOnly(node.comment) : node.comment;
+        if (comment) bits.push(`{${comment}}`);
+
         return bits.join(' ');
     }
 }
